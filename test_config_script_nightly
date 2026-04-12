@@ -8,7 +8,7 @@ FIRST_IN="0"
 VER="0.0.70"
 
 ifdown "$IFACE"
-# service opera-proxy restart
+/etc/init.d/opera-proxy restart >/dev/null 2>&1
 ifup "$IFACE"
 
 clear
@@ -53,8 +53,8 @@ echo "--------------------------------------------------------------"
 
 
 _i=1
-_retries=2
-_opkg_timeout=3
+_retries=4
+_opkg_timeout=4
 _tmp_conf="/tmp/opkg_safe.conf"
 _update_log="/tmp/opkg_update_log"
 
@@ -81,10 +81,18 @@ if opkg compare-versions "$ver" "<" "1.15.10" && ! opkg compare-versions "$ver" 
 fi
 
 
-
-
-
+# Устанавливаем curl, wget и opera-proxy если их нет или версия OPERA устарела
 if [ $WGET_INSTALLED -eq 0 ] || [ $CURL_INSTALLED -eq 0 ] || [ $OPERA_INSTALLED -eq 0 ]; then
+
+    to_install=""   # начальное значение – пустая строка
+    [ $WGET_INSTALLED -eq 0 ] && to_install="${to_install} wget"
+    [ $CURL_INSTALLED -eq 0 ] && to_install="${to_install} curl"
+    [ $OPERA_INSTALLED -eq 0 ] && to_install="${to_install} opera-proxy" && /etc/init.d/opera-proxy stop >/dev/null 2>&1
+    # Убираем лишний пробел в начале (если была добавлена хоть одна программа)
+    to_install="${to_install# }"
+
+	echo -e "${GREEN}Устанавливаем/обновляем: $to_install${CLR_OFF}"
+
     while [ "$_i" -le "$_retries" ]; do
         echo -e "${YELLOW}Попытка обновления списка пакетов:${CLR_OFF} ($_i/$_retries)"
 
@@ -97,7 +105,7 @@ if [ $WGET_INSTALLED -eq 0 ] || [ $CURL_INSTALLED -eq 0 ] || [ $OPERA_INSTALLED 
             else
                 echo -e "${GREEN}Списки обновлены успешно${CLR_OFF}"
                 # Устанавливаем через тот же конфиг с таймаутом
-                opkg -f "$_tmp_conf" install wget-ssl curl opera-proxy
+                opkg -f "$_tmp_conf" install ${to_install}
                 OPKG_UPDATED=1
                 break
             fi
