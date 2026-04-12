@@ -29,17 +29,6 @@ WARNING_LISTS="russia_inside russia_outside cloudflare cdn_cloudflare"
 # --- ЕДИНЫЙ СПИСОК СЕРВИСОВ ---
 RAW_SERVICES="zeroblock podkop luci-app-podkop-plus sing-box sing-box-tiny zapret zapret2 opera-proxy youtubeUnblock ruantiblock"
 
-# --- СПИСОК УСТАНОВЛЕННЫХ СЕРВИСОВ/ПРОГРАММ ---
-for pkg in $RAW_SERVICES; do
-    if opkg list-installed | grep -q "^${pkg} - "; then 
-        if [ "${pkg}" = "sing-box-tiny" ]; then
-            INSTALLED_SERVICES="$INSTALLED_SERVICES sing-box"
-            continue
-        fi
-        INSTALLED_SERVICES="$INSTALLED_SERVICES ${pkg}"
-    fi
-done
-
 # --- НАСТРОЙКА ЛОГИРОВАНИЯ ---
 LOG_FILE="/root/analyzer.log"
 rm -f "$LOG_FILE"
@@ -48,6 +37,9 @@ rm -f "$LOG_FILE"
 PK_VER_OBSOLETE="0.5"
 PK_VER_MIN="0.7"
 
+
+
+# --- MAIN CODE ---
 clear
 for i in $(seq 1 4); do echo ""; done
 
@@ -58,6 +50,7 @@ echo -e "Лог сохраняется в: ${YELLOW}$LOG_FILE${CLR_OFF}"
 echo "--------------------------------------------------------------"
 
 # --- УСТАНОВКА ЗАВИСИМОСТЕЙ ---
+
 
 _i=1
 _retries=2
@@ -116,9 +109,74 @@ if [ $WGET_INSTALLED -eq 0 ] || [ $CURL_INSTALLED -eq 0 ]; then
     done
 fi
 
+
+
 # =====================
 # ФУНКЦИИ
 # =====================
+# region FUNCTIONS
+
+# --- СПИСОК УСТАНОВЛЕННЫХ СЕРВИСОВ/ПРОГРАММ ---
+
+services_installed() {
+	for pkg in $RAW_SERVICES; do
+		if opkg list-installed | grep -q "^${pkg} - "; then 
+			if [ "${pkg}" = "sing-box-tiny" ]; then
+				INSTALLED_SERVICES="$INSTALLED_SERVICES sing-box"
+				continue
+			fi
+			INSTALLED_SERVICES="$INSTALLED_SERVICES ${pkg}"
+		fi
+	done
+}
+
+# --- СПИСОК ЗАПУЩЕННЫХ СЕРВИСОВ ---
+
+services_active() {
+	active=""
+	for s in $INSTALLED_SERVICES; do
+		# init.d status check
+		[ ! -f /etc/init.d/${s} ] && continue
+		status=$(/etc/init.d/$s status 2>/dev/null | head -1)
+		case "$status" in
+			*running)
+				active="$active $s"
+				continue
+				;;
+			*not\ running*)
+				active="$active $s"
+				continue
+				;;
+			*inactive*)
+				continue
+				;;
+		esac
+		
+		# fallback checks if init.d status gave no clear result
+		if pidof "$s" >/dev/null 2>&1 || \
+		   pgrep -f "$s" >/dev/null 2>&1 || \
+		   ubus call service list 2>/dev/null | grep -q "\"$s\""; then
+			active="$active $s"
+		fi
+	done
+	active="${active# }"
+	# echo "$active"
+}
+
+
+# Проверяем сервисы в автозапуске. Все с автозапуском вносим в $autostarted
+# вне зависимости от их состояния. Необходимо получить информацию о том
+# что запущено на роутере после его перезагрузки
+services_autostarted() {
+	for pkg in $INSTALLED_SERVICES; do
+		[ ${pkg} = "luci-app-podkop-plus" ] && pkg="podkop-plus"
+		if ls /etc/rc.d/S??${pkg} 1>/dev/null 2>&1; then
+			autostarted="$autostarted ${pkg}"
+		fi
+	done
+}
+
+
 
 # --- ФУНКЦИЯ ОЧИСТКИ СТРОКИ ОТ ЛИШНИХ ПРОБЕЛОВ, КАВЫЧЕК, НЕПЕЧАТАЕМЫХ СИМВОЛОВ И КОММЕНТАРИЕВ ---
 clean_uci_str() {
@@ -210,9 +268,31 @@ check_userlists() {
 # Чистим временный конфиг
 [ -f "$_tmp_conf" ] && rm "$_tmp_conf"
 
+
+# endregion FUNCTIONS
+# =====================
+# ФУНКЦИИ END
+# =====================
+
+
 echo ""
 
 
+# --- СОБИРАЕМ СПИСКИ ПРОГРАММ УСТАНОВЛЕННЫХ, В АВТОЗАПУСКЕ И ЗАПУЩЕННЫХ ---
+
+PK_AUTOSTART=0
+ZB_AUTOSTART=0
+PK_ACTIVE=0
+ZB_ACTIVE=0
+
+services_installed
+services_autostarted
+services_active
+
+echo "$autostarted" | grep -q "podkop" && PK_AUTOSTART=1
+echo "$autostarted" | grep -q "zeroblock" && ZB_AUTOSTART=1
+echo "$active" | grep -q "podkop" && PK_ACTIVE=1
+echo "$active" | grep -q "zeroblock" && ZB_ACTIVE=1
 
 
 
@@ -263,50 +343,8 @@ printf "YouTube IP:  ${YELLOW}%s${CLR_OFF}\n" "${YT_IP:-UNKNOWN}"
 
 
 
-
-
-
-
-# --- СОБИРАЕМ СПИСОК ЗАПУЩЕННЫХ СЕРВИСОВ ---
-runned=""
-for s in $INSTALLED_SERVICES; do
-    # init.d status check
-	[ ! -f /etc/init.d/${s} ] && continue
-    status=$(/etc/init.d/$s status 2>/dev/null | head -1)
-    case "$status" in
-        *running)
-            runned="$runned $s"
-            continue
-            ;;
-        *not\ running*)
-            runned="$runned $s"
-            continue
-            ;;
-        *inactive*)
-            continue
-            ;;
-    esac
-    
-    # fallback checks if init.d status gave no clear result
-    if pidof "$s" >/dev/null 2>&1 || \
-       pgrep -f "$s" >/dev/null 2>&1 || \
-       ubus call service list 2>/dev/null | grep -q "\"$s\""; then
-        runned="$runned $s"
-    fi
-done
-runned="${runned# }"
-# echo "$runned"
-
-
-
-
-
-
-
 # --- ОПРЕДЕЛЯЕМ СОСТОЯНИЕ СЕРВИСОВ И ОСТАНАВЛИВАЕМ МЕШАЮЩИЕ ---
 # В $INSTALLED_SERVICES содержатся имена установленных сервисов обхода
-
-active=""
 
 # Останавливаем сервисы (даже если они не запущены)
 for pkg in $INSTALLED_SERVICES; do
@@ -317,19 +355,11 @@ sleep 1
 
 
 
-
-
-
-# Проверяем сервисы в автозапуске. Все с автозапуском вносим в $active
+# Проверяем сервисы в автозапуске. Все с автозапуском вносим в $autostarted
 # вне зависимости от их состояния. Необходимо получить информацию о том
 # что запущено на роутере после его перезагрузки
-for pkg in $INSTALLED_SERVICES; do
-	[ ${pkg} = "luci-app-podkop-plus" ] && pkg="podkop-plus"
-	if ls /etc/rc.d/S??${pkg} 1>/dev/null 2>&1; then
-		active="$active ${pkg}"
-	fi
-done
-
+# autostarted=""
+# services_active
 
 
 
@@ -377,7 +407,7 @@ fi
 
 
 
-printf "  ${YELLOW}Программы в автозапуске:$active${CLR_OFF}\n"
+printf "  ${YELLOW}Программы в автозапуске:$autostarted${CLR_OFF}\n"
 
 
 echo ""
@@ -412,11 +442,11 @@ if [[ "$P_CODE" == *"200 OK"* ]]; then
     printf "  OPERA (Proxy): %b (%s)\n" "${GREEN}ОНЛАЙН${CLR_OFF}" "$P_CODE"
 	elif [[ -n "$P_CODE" ]]; then
 		# Получен статус, но не 200 OK
-		printf "  OPERA (Proxy): ${RED_BRIGHT}ОФЛАЙН[%s]${CLR_OFF}\n" "$P_CODE"
+		printf "  OPERA (Proxy): ${RED_BRIGHT}ОФЛАЙН [%s]${CLR_OFF}\n" "$P_CODE"
 		NEED_RESOLVE_TEST=1
 	else
 		# P_CODE пуст — ошибка соединения/таймаут
-		printf "  OPERA (Proxy): ${RED_BRIGHT}ОФЛАЙН  !!!_ОПЕРА ЗАБЛОКИРОВАЛА РОССИЮ_!!! ${CLR_OFF}\n"
+		printf "  OPERA (Proxy): ${RED_BRIGHT}ОФЛАЙН${CLR_OFF}\n"
 		NEED_RESOLVE_TEST=1
 	fi
 
@@ -500,8 +530,8 @@ fi
 # --- ЗАПУСКАЕМ РАНЕЕ ОСТАНОВЛЕННЫЕ СЕРВИСЫ
 
 printf "  ${YELLOW}Запускаем остановленные службы, ожидайте...${CLR_OFF}\n"
-#for pkg in $active; do
-for pkg in $runned; do
+#for pkg in $autostarted; do
+for pkg in $active; do
   if [ "${pkg}" == "sing-box" ]; then continue; fi
   /etc/init.d/${pkg} start 1>/dev/null 2>&1
 done
@@ -545,8 +575,8 @@ echo ""
 echo "= СТАТУС СЛУЖБ (НЕ УСТАНОВЛЕННЫЕ НЕ ОТОБРАЖАЮТСЯ):"
 
 PK_INST=0; echo $INSTALLED_SERVICES | grep -qw "podkop" && PK_INST=1
-PK_AUTOSTART=0; echo $active | grep -q "podkop" && PK_AUTOSTART=1
-ZB_AUTOSTART=0; echo $active | grep -q "zeroblock" && ZB_AUTOSTART=1
+# PK_AUTOSTART=0; echo $autostarted | grep -q "podkop" && PK_AUTOSTART=1
+# ZB_AUTOSTART=0; echo $autostarted | grep -q "zeroblock" && ZB_AUTOSTART=1
 
 CHAOS=0; [ $ZB_AUTOSTART -eq 1 ] && [ $PK_AUTOSTART -eq 1 ] && CHAOS=1
 ZB_RUN=0; zeroblock status 2>/dev/null | grep -q "Overall: RUNNING" && ZB_RUN=1
@@ -953,16 +983,6 @@ done
 
 # --- БЛОК ПОИСКА СЕКЦИЙ РОДИТЕЛЬСКОГО КОНТРОЛЯ И СЕКЦИЙ БЛОКИРОВКИ ДОСТУПА В ZEROBLOCK---
 
-PK_AUTOSTART=0
-ZB_AUTOSTART=0
-PK_RUNNED=0
-ZB_RUNNED=0
-
-echo "$active" | grep -q "podkop" && PK_AUTOSTART=1
-echo "$active" | grep -q "zeroblock" && ZB_AUTOSTART=1
-# echo "$runned" | grep -q "podkop" && PK_RUNNED=1
-# echo "$runned" | grep -q "zeroblock" && ZB_RUNNED=1
-
 if [ "${ZB_AUTOSTART}" = "1" ]; then
 	pkg="zeroblock"
 	_block_sections=""
@@ -1219,7 +1239,7 @@ if [ -z "$indices" ] || [ "$count" -eq 0 ]; then
 fi
 
 if [ "$count" -gt 1 ]; then
-    printf "\033[1;31m  Обнаружено несколько секций dnsmasq (%d). Невозможно определить используемую.\033[0m\n" "$count"
+    printf "${YELLOW}  Обнаружено несколько секций dnsmasq (%d). Невозможно определить используемую. ${CLR_OFF}" "$count"
 else
 	idx="$indices"
 	strict=$(uci -q get "dhcp.@dnsmasq[$idx].strictorder")
@@ -1240,9 +1260,8 @@ fi
 sleep 2 # "успокоение" процессора
 echo ""
 echo "= СИСТЕМНЫЕ РЕСУРСЫ:"
-printf "  LAN IP: %s\n" "$LAN_IP (Прошивка: ${VERSION})"
+printf "  LAN IP: %s\n" "${LAN_IP} | uptime: $(uptime | sed -E 's/^.*up ([^,]+),.*$/\1/') | (Прошивка: ${VERSION})"
 printf "  CPU: %s | RAM: %s%% | NAND: %s занято / %s доступно\n" "$LOAD" "$MEM_P" "$NAND_PCT" "$NAND_FREE"
-# crontab -l | sed 's/^/  /'
 crontab -l | sed -e '/^[[:space:]]*#/d' -e 's/^/  /'
 if opkg list-installed | grep -q "wdoc"; then
     printf "  ${RED_BRIGHT}!!!_WatchDoc установлен${CLR_OFF}\n"
