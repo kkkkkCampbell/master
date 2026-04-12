@@ -8,7 +8,7 @@ FIRST_IN="0"
 VER="0.0.69"
 
 ifdown "$IFACE"
-service opera-proxy restart
+# service opera-proxy restart
 ifup "$IFACE"
 
 clear
@@ -66,12 +66,25 @@ echo "option http_timeout $_opkg_timeout" >> "$_tmp_conf"
 # --- УСТАНОВКА ---
 WGET_INSTALLED=0
 CURL_INSTALLED=0
+OPERA_INSTALLED=1
 
 # проверяем наличие wget и curl в системе
 opkg list-installed | grep -q '^wget-ssl' && WGET_INSTALLED=1
 opkg list-installed | grep -q '^curl' && CURL_INSTALLED=1
+# opkg list-installed | grep "^opera-proxy - 1.15.0*-r*" && OPERA_INSTALLED=1
 
-if [ $WGET_INSTALLED -eq 0 ] || [ $CURL_INSTALLED -eq 0 ]; then
+# Получаем установленную версию opera-proxy (обрезаем суффикс типа -1, +build)
+ver=$(opkg list-installed | awk '/^opera-proxy / {print $3}' | sed 's/[-+~].*//')
+# Проверяем, что версия меньше И при этом не равна
+if opkg compare-versions "$ver" "<" "1.15.10" && ! opkg compare-versions "$ver" "=" "1.15.1"; then
+    OPERA_INSTALLED=0
+fi
+
+
+
+
+
+if [ $WGET_INSTALLED -eq 0 ] || [ $CURL_INSTALLED -eq 0 ] || [ $OPERA_INSTALLED -eq 0 ]; then
     while [ "$_i" -le "$_retries" ]; do
         echo -e "${YELLOW}Попытка обновления списка пакетов:${CLR_OFF} ($_i/$_retries)"
 
@@ -84,7 +97,7 @@ if [ $WGET_INSTALLED -eq 0 ] || [ $CURL_INSTALLED -eq 0 ]; then
             else
                 echo -e "${GREEN}Списки обновлены успешно${CLR_OFF}"
                 # Устанавливаем через тот же конфиг с таймаутом
-                opkg -f "$_tmp_conf" install wget-ssl curl
+                opkg -f "$_tmp_conf" install wget-ssl curl opera-proxy
                 OPKG_UPDATED=1
                 break
             fi
@@ -348,10 +361,13 @@ printf "YouTube IP:  ${YELLOW}%s${CLR_OFF}\n" "${YT_IP:-UNKNOWN}"
 
 # Останавливаем сервисы (даже если они не запущены)
 for pkg in $INSTALLED_SERVICES; do
+	if [ "${pkg}" = "opera-proxy" ]; then 
+		#echo "OPERA"
+		continue
+	fi
 	[ -f /etc/init.d/${pkg} ] && /etc/init.d/${pkg} stop >/dev/null 2>&1
 done
-[ -f /etc/init.d/opera-proxy ] && /etc/init.d/opera-proxy start # Запускаем opera-proxy (так проще :))
-sleep 1
+
 
 
 
@@ -428,7 +444,7 @@ CLEAN_URL=$(echo "$CLEAN_URL" | tr 'a-z' 'A-Z')
 NEED_RESOLVE_TEST=0
 echo "= ПРОВЕРКА ДОСТУПОВ (${CLEAN_URL}):"
 
-
+OPERA_TEST_CYCLE=3
 
 
 
@@ -436,7 +452,13 @@ echo "= ПРОВЕРКА ДОСТУПОВ (${CLEAN_URL}):"
 
 # Если опера-прокси установлена, проверям доступ через опера-прокси
 if opkg list-installed | grep -q "^opera-proxy"; then
-P_CODE=$(curl -I -s --connect-timeout 3 -x http://127.0.0.1:18080 "$TEST_URL" | head -n 1 | tr -d '\r\n')
+
+for i in $(seq 1 ${OPERA_TEST_CYCLE}); do
+    P_CODE=$(curl -I -s --connect-timeout 10 -x http://127.0.0.1:18080 "$TEST_URL" | head -n 1 | tr -d '\r\n')
+    # echo "test " "$i"
+    # /etc/init.d/opera-proxy restart
+    sleep 3
+done
 
 if [[ "$P_CODE" == *"200 OK"* ]]; then
     printf "  OPERA (Proxy): %b (%s)\n" "${GREEN}ОНЛАЙН${CLR_OFF}" "$P_CODE"
@@ -1206,6 +1228,8 @@ fi
 
 # --- ИЩЕМ ROUTE_ALLOWED_IPS И NOHOSTROUTE ---
 
+# region ИЩЕМ ROUTE_ALLOWED_IPS И NOHOSTROUTE
+
 # Поиск всех секций network с proto='amneziawg'
 uci show network | grep "\.proto='amneziawg'$" | while IFS= read -r line; do
     rai_raw=""
@@ -1217,16 +1241,16 @@ uci show network | grep "\.proto='amneziawg'$" | while IFS= read -r line; do
     nohostroute=$(uci get "${config_id}.nohostroute" 2>/dev/null)
     # Проверка nohostroute: ошибка, если значение не равно "1"
     if [ -z "$nohostroute" ] || [ "$nohostroute" = "0" ]; then
-        printf "  !!!_${RED_BRIGHT}Интерфейс %s: nohostroute не установлен в 1 (создание маршрутов включено!)${CLR_OFF}\n" \
+        printf "  !!!_${RED_BRIGHT}%s: \"Не создавать маршруты\" не установлен в 1${CLR_OFF}\n" \
             "$interface_id"
     fi
     # Проверка route_allowed_ips: ошибка, если значение равно "1"
     if [ ! -z "${rai_raw}" ] && echo ${rai_raw} | grep -q "_ips='1'"; then
-        printf "  !!!_${RED_BRIGHT}Интерфейс %s: route_allowed_ips включен. Catch-all интерфейс!${CLR_OFF}\n" \
+        printf "  !!!_${RED_BRIGHT}%s: \"Маршрутизировать разрешённые IP-адреса\" включено. Catch-all интерфейс!${CLR_OFF}\n" \
             "$interface_id"
     fi
 done
-
+# endregion
 
 # --- DNSMASQ SETTINGS CHECK ---
 
