@@ -5,10 +5,10 @@ export TERM=xterm-256color
 . /etc/os-release
 IFACE="awg10"
 FIRST_IN="0"
-VER="0.0.70"
+VER="0.0.71"
 
 ifdown "$IFACE"
-/etc/init.d/opera-proxy restart >/dev/null 2>&1
+# /etc/init.d/opera-proxy restart >/dev/null 2>&1
 ifup "$IFACE"
 
 clear
@@ -369,10 +369,8 @@ printf "YouTube IP:  ${YELLOW}%s${CLR_OFF}\n" "${YT_IP:-UNKNOWN}"
 
 # Останавливаем сервисы (даже если они не запущены)
 for pkg in $INSTALLED_SERVICES; do
-	if [ "${pkg}" = "opera-proxy" ]; then 
-		#echo "OPERA"
-		continue
-	fi
+    [ "${pkg}" == "opera-proxy" ] && continue
+    [ "${pkg}" == "zeroblock" ] && continue
 	[ -f /etc/init.d/${pkg} ] && /etc/init.d/${pkg} stop >/dev/null 2>&1
 done
 
