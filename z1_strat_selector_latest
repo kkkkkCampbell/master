@@ -1,0 +1,389 @@
+#!/bin/sh
+#z1_strat_selector_latest
+
+clear
+echo "ver 0.0.5"
+sleep 3
+
+dd count=1 bs=1024 2>/dev/null
+
+# Сброс цвета
+NC='\033[0m'
+
+# Цвета
+RED='\033[31m'
+GREEN='\033[32m'
+YELLOW='\033[33m'
+BLUE='\033[34m'
+MAGENTA='\033[35m'
+CYAN='\033[36m'
+WHITE='\033[37m'
+
+# Яркие
+BRED='\033[91m'    # Светло-красный
+BGREEN='\033[92m'
+BYELLOW='\033[93m'
+BBLUE='\033[94m'
+BMAGENTA='\033[95m'
+BCYAN='\033[96m'
+BWHITE='\033[97m'
+
+CURR_STRAT="???"
+
+# Путь к файлу конфигурации
+CONFIG_FILE="/opt/strategy_selector/strategy"
+mkdir -p "/opt/strategy_selector/"
+
+# Скачиваем стратегии, если их нет
+[ ! -f "$CONFIG_FILE" ] && wget -qO "$CONFIG_FILE" https://raw.githubusercontent.com/kkkkCampbell/master/refs/heads/z1_strat_selector/strategy
+
+
+#--- СКАЧИВАЕМ И УСТАНАВЛИВАЕМ ЗАПРЕТ ОТ РЕМИТТОР
+
+
+
+zapret_installer() {
+
+	# Скрипт автоматической установки zapret на OpenWrt
+	# Источник: https://github.com/kkkkCampbell/trash/raw/refs/heads/zapret_autoconfig/zapret.zip
+
+	# set -e  # остановка при любой ошибке
+
+	URL="https://github.com/kkkkCampbell/trash/raw/refs/heads/zapret_autoconfig/zapret.zip"
+	ZIP_FILE="/tmp/zapret.zip"
+	TMP_DIR="/tmp"
+
+	# Функция для вывода сообщений
+	log() {
+		echo "[zapret-installer] $1"
+	}
+
+	# 1. Скачивание архива
+	log "Скачивание $URL в $ZIP_FILE"
+	if command -v wget >/dev/null 2>&1; then
+		wget -O "$ZIP_FILE" "$URL"
+	elif command -v curl >/dev/null 2>&1; then
+		curl -L -o "$ZIP_FILE" "$URL"
+	else
+		log "ОШИБКА: ни wget, ни curl не установлены."
+		exit 1
+	fi
+
+	if [ ! -f "$ZIP_FILE" ]; then
+		log "ОШИБКА: файл не был скачан."
+		exit 1
+	fi
+	
+	# Проверка, установлен ли пакет unzip
+	if ! opkg list-installed | grep -q "^unzip -"; then
+		echo "Пакет unzip не установлен. Устанавливаю..."
+		opkg update
+		opkg install unzip
+		opkg_updated=1
+	fi
+
+	# 2. Распаковка архива в /tmp
+	log "Распаковка $ZIP_FILE в $TMP_DIR"
+	if command -v unzip >/dev/null 2>&1; then
+		unzip -o "$ZIP_FILE" -d "$TMP_DIR"
+	elif command -v busybox >/dev/null 2>&1 && busybox --list 2>/dev/null | grep -q unzip; then
+		busybox unzip -o "$ZIP_FILE" -d "$TMP_DIR"
+	fi
+	
+	
+	# 3. Проверка наличия .ipk файлов
+	ZAPRET_IPK="/tmp/zapret.ipk"
+	LUCI_IPK="/tmp/luci-app-zapret.ipk"
+
+	if [ ! -f "$ZAPRET_IPK" ]; then
+		log "ОШИБКА: $ZAPRET_IPK не найден после распаковки."
+		exit 1
+	fi
+
+	if [ ! -f "$LUCI_IPK" ]; then
+		log "ОШИБКА: $LUCI_IPK не найден после распаковки."
+		exit 1
+	fi
+
+
+	 if [ "$opkg_updated" !=1  ]; then 
+		opkg update
+	fi
+	
+	# 4. Установка пакетов
+	clear
+	echo ""
+	echo ""
+	log "Установка zapret.ipk ..."
+	opkg install "$ZAPRET_IPK"
+
+	log "Установка luci-app-zapret.ipk ..."
+	opkg install "$LUCI_IPK"
+
+	# 5. Очистка (удаление архива, .ipk-файлы можно оставить или удалить)
+	log "Очистка временных файлов..."
+	rm -f "$ZIP_FILE"
+	rm -f "$ZAPRET_IPK" "$LUCI_IPK"
+	echo ""
+	
+	log "Установка успешно завершена."
+	if [ -f "/etc/init.d/youtubeUnblock" ]; then 
+		/etc/init.d/youtubeUnblock stop
+		/etc/init.d/youtubeUnblock disable
+	fi
+	
+	if [ -f "/etc/init.d/zapret2" ]; then 
+		/etc/init.d/zapret2 stop
+		/etc/init.d/zapret2 disable
+	fi
+	
+	service zapret restart
+	echo ""
+
+}
+
+
+filter_mark_correction() {
+	sed -i 's/^[[:space:]]*option FILTER_MARK .*/option FILTER_MARK '\''	'\''/' "${CONFIG_FILE}"
+}
+
+clrd_print() {
+    case "$1" in
+        info)
+            echo -e "${GREEN}$2${NC}"
+            ;;
+        err)
+            echo -e "${BRED}$2${NC}"
+            ;;
+        warn)
+            echo -e "${YELLOW}$2${NC}"
+            ;;
+        *)
+            echo "$2"
+            ;;
+    esac
+}
+
+# Функция для получения списка секций из файла
+get_sections() {
+    grep -E '^\[.*\]$' "$CONFIG_FILE" | sed 's/\[\(.*\)\]/\1/'
+}
+
+# Функция для подсчета количества секций
+count_sections() {
+    get_sections | wc -l
+}
+
+# Функция для чтения конкретной секции
+read_section() {
+    local section="$1"
+    local in_section=0
+    
+    while IFS= read -r line || [ -n "$line" ]; do
+        # Пропускаем пустые строки
+        # [ -z "$line" ] && continue
+        
+        # Проверяем начало нужной секции
+        if echo "$line" | grep -q "^\[$section\]"; then
+            in_section=1
+            continue
+        fi
+        
+        # Проверяем начало другой секции
+        if echo "$line" | grep -q "^\[.*\]"; then
+            if [ $in_section -eq 1 ]; then
+                break
+            fi
+            continue
+        fi
+        
+        # Выводим содержимое текущей секции
+        if [ $in_section -eq 1 ]; then
+            echo "$line"
+        fi
+    done < "$CONFIG_FILE"
+}
+
+# Проверяем существование файла
+if [ ! -f "$CONFIG_FILE" ]; then
+    echo "Ошибка: Файл $CONFIG_FILE не найден!" >&2
+    exit 1
+fi
+
+# Проверяем, есть ли секции в файле
+SECTION_COUNT=$(count_sections)
+if [ $SECTION_COUNT -eq 0 ]; then
+    echo "Ошибка: В файле $CONFIG_FILE нет секций!" >&2
+    exit 1
+fi
+
+# Сохраняем секции в массив (для ASH используем временный файл)
+TEMP_SECTIONS="/tmp/sections.$$"
+get_sections > "$TEMP_SECTIONS"
+
+# Правим FILTER_MARK
+filter_mark_correction
+
+# Основной цикл программы
+while true; do
+    clear
+    echo ""
+    echo ""
+    echo "   === МЕНЮ ВЫБОРА СТРАТЕГИИ ==="
+    echo ""
+	printf "   Действующая стратегия: "
+	clrd_print warn "${CURR_STRAT}"
+    echo ""
+	
+    i=1
+    while read section; do
+        echo "  $i. $section"
+        i=$((i + 1))
+    done < "$TEMP_SECTIONS"
+    
+    echo ""
+	echo "  777. Установить zapret от Remittor"
+    echo "  888. Обновить стратегии"
+    echo "  999. Выход"
+    echo ""
+    
+    echo -n "Выберите стратегию (1-$SECTION_COUNT или 999 для выхода): "
+    read choice
+	
+	
+	# Устанавливаем запрет от ремиттор, отключаем ютубанблок
+	if [ "$choice" = "777" ]; then
+		zapret_installer
+		echo ""; echo "Нажмите Enter для продолжения..."
+		read dummy
+		continue
+	fi
+	
+	# Проверка на обновление стратегий
+	if [ "$choice" = "888" ]; then
+		clrd_print info "Обновляем стратегии..."
+		
+		# Качаем
+		if wget -qO "$CONFIG_FILE" https://raw.githubusercontent.com/kkkkCampbell/master/refs/heads/z1_strat_selector/strategy; then
+			# Правим FILTER_MARK
+			filter_mark_correction
+			clrd_print info "Стратегии обновлены."
+		else
+			clrd_print err "Ошибка загрузки стратегий!"
+		fi
+
+		if [ -z "$(cat $CONFIG_FILE)" ]; then
+			clrd_print warn "Файл стратегий ${CONFIG_FILE} пустой или содержит только пробельные символы!"
+		fi
+
+		echo ""; echo "Нажмите Enter для продолжения..."
+		read dummy
+		continue
+	fi
+	
+    # Проверка на выход
+    if [ "$choice" = "999" ]; then
+        echo "Выход из программы."
+        rm -f "$TEMP_SECTIONS"
+        exit 0
+    fi
+    
+	# Проверка, что ввод - число
+    if ! echo "$choice" | grep -q '^[0-9]\+$'; then
+        echo "Ошибка: Введите число!"
+        echo "Нажмите Enter для продолжения..."
+        read dummy
+        continue
+    fi
+
+	
+	# Останавливаем анблок
+	if [ -f "/etc/init.d/youtubeUnblock" ]; then
+		/etc/init.d/youtubeUnblock stop
+		/etc/init.d/youtubeUnblock disable
+	fi
+	
+	# и запрет2
+	if [ -f "/etc/init.d/zapret2" ]; then
+		/etc/init.d/zapret2 stop
+		/etc/init.d/zapret2 disable
+	fi
+	
+    # Проверка диапазона
+    if [ "$choice" -lt 1 ] || [ "$choice" -gt "$SECTION_COUNT" ]; then
+        echo "Ошибка: Неверный номер стратегии! Введите число от 1 до $SECTION_COUNT"
+        echo "Нажмите Enter для продолжения..."
+        read dummy
+        continue
+    fi
+    
+    # Получаем название выбранной секции
+    selected_section=$(sed -n "${choice}p" "$TEMP_SECTIONS")
+    CURR_STRAT="${selected_section}"
+    clear
+    clrd_print info "=== СТРАТЕГИЯ: $selected_section ==="
+    echo ""
+    
+    # Читаем содержимое секции
+    section_content=$(read_section "$selected_section")
+	section_content=$(printf "%s" "$section_content" | tr -d '\r')
+
+    # Выводим содержимое
+    # echo "$section_content"
+    # echo ""
+
+	# Импортируем в UCI
+	clrd_print info "Импорт в UCI..."
+
+	# Сохраняем вывод и код возврата
+	import_output=$( (echo "package zapret"; echo ""; echo "${section_content}") | uci import 2>&1 )
+	import_status=$?
+
+	uci commit zapret 2>/dev/null
+
+	if [ $import_status -eq 0 ] && [ -z "$import_output" ]; then
+		clrd_print info "Импорт прошёл без ошибок."
+	else
+		clrd_print err "Ошибка импорта:"
+		echo "$import_output"
+	fi
+
+	# Экспортируем в файл
+	(echo ""; echo "${section_content}") >/etc/config/zapret
+
+	cd /opt/zapret
+	# ls
+	
+	sh sync_config.sh
+	#/opt/zapret/restore-def-cfg.sh
+	#/opt/zapret/renew-cfg.sh
+	sleep 3
+
+# Запускаем рестарт и ловим вывод
+clrd_print info  "Перезапускаем запрет."
+clrd_print info  "Лог запуска запрет:"
+echo ""
+restart_output=$(service zapret restart 2>&1)
+
+echo "$restart_output"
+
+# Ищем признаки ошибки
+if echo "$restart_output" | grep -qi "unexpected !="; then
+    clrd_print info "Ошибка в стратегии, проверьте внимательно!"
+else
+	echo ""
+    clrd_print info "Стратегия изменена. Явные ошибки не обнаружены. Проверяйте доступ к ютуб."
+fi
+	
+    # # Показываем результат
+    # echo ""
+    # echo "Результат импорта:"
+    # uci show "$selected_section"
+    
+    echo ""
+    echo "Нажмите Enter для возврата в меню..."
+    read -t 5 dummy
+done
+
+# Очистка временного файла при выходе
+rm -f "$TEMP_SECTIONS"
