@@ -31,7 +31,7 @@
   
 Запуск скрипта:
 ```
-wget https://raw.githubusercontent.com/kkkkCampbell/master/refs/heads/main/openwrt_full_backup -O /backup && \
+wget https://raw.githubusercontent.com/kkkkCampbell/master/refs/heads/main/openwrt_full_backup.sh -O /backup && \
 chmod +x /backup && /backup
 ```
 
@@ -42,5 +42,5 @@ chmod +x /backup && /backup
 Запуск скрипта:
 
 ```
-sh <(wget -qO- https://raw.githubusercontent.com/kkkkCampbell/master/refs/heads/main/user_installed_packages)
+sh <(wget -qO- https://raw.githubusercontent.com/kkkkCampbell/master/refs/heads/main/user_installed_packages.sh)
 ```
