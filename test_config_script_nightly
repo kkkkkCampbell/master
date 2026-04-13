@@ -5,7 +5,7 @@ export TERM=xterm-256color
 . /etc/os-release
 IFACE="awg10"
 FIRST_IN="0"
-VER="0.0.72" # не перезапускаем опера и не останавдиваем зероблок
+VER="0.0.74"
 
 ifdown "$IFACE"
 # /etc/init.d/opera-proxy restart >/dev/null 2>&1
@@ -463,7 +463,7 @@ for i in $(seq 1 ${OPERA_TEST_CYCLE}); do
     P_CODE=$(curl -I -s --connect-timeout 10 -x http://127.0.0.1:18080 "$TEST_URL" | head -n 1 | tr -d '\r\n')
     # echo "test " "$i"
     # /etc/init.d/opera-proxy restart
-    sleep 3
+    sleep 1
 done
 
 if [[ "$P_CODE" == *"200 OK"* ]]; then
@@ -490,7 +490,7 @@ if [ -d "/sys/class/net/$IFACE" ]; then
     IF_IP4=$(ip -4 addr show "$IFACE" 2>/dev/null | grep -w inet | awk '{print $2}' | cut -d/ -f1 | tr -d '\r\n')
     IF_IP6=$(ip -6 addr show "$IFACE" 2>/dev/null | grep -w inet6 | grep -v "fe80" | awk '{print $2}' | cut -d/ -f1 | head -n 1 | tr -d '\r\n')
 	
-# --- IPv4 с подсчётом попыток ---
+	# --- IPv4 с подсчётом попыток ---
 	if [ -n "$IF_IP4" ]; then
     MAX_RETRIES=2
     TRY=0
@@ -498,8 +498,28 @@ if [ -d "/sys/class/net/$IFACE" ]; then
     FINAL_W_CODE=""
     FINAL_TLS=""
     FINAL_FULL_OUT=""
+	
+	# Проверяем доступ через варп к незаблокированному сервису
+	RKN_WARP_BLOCK=0
+	# Сначала пробуем TLSv1.3
+	for tls_ver in tlsv1.3 tlsv1.2; do
+		for attempt in $(seq 1 $MAX_RETRIES); do
+			TRY=$((TRY + 1))
+			FULL_OUT=$(curl -4 -I -A -s --no-progress-meter --user-agent 'Mozilla/5.0' \
+				--interface "$IFACE" --max-time 20 --connect-timeout 9 \
+				--insecure --$tls_ver "https://ya.ru" 2>&1)
+			W_CODE=$(echo "$FULL_OUT" | awk '/HTTP\// {print; exit}')
+			if [ -n "$W_CODE" ]; then
+				RKN_WARP_BLOCK=1
+				break 2   # выходим из двух циклов
+			fi
+			# если не успех, продолжаем
+		done
+	done
 
-    # Сначала пробуем TLSv1.3
+
+
+	# Сначала пробуем TLSv1.3
     for tls_ver in tlsv1.3 tlsv1.2; do
         for attempt in $(seq 1 $MAX_RETRIES); do
             TRY=$((TRY + 1))
@@ -518,20 +538,26 @@ if [ -d "/sys/class/net/$IFACE" ]; then
         done
     done
 
+
+		
     if [ $SUCCESS -eq 1 ]; then
         # Убираем лишние пробелы и перевод строк
         W_CODE_CLEAN=$(echo "$FINAL_W_CODE" | tr -d '\r' | sed 's/[[:space:]]*$//')
         printf "  %-14s %b (%s) [%s] [try: %d]\n" \
             "$IFACE (IPv4) :" "${GREEN}ОНЛАЙН${CLR_OFF}" \
             "$W_CODE_CLEAN OK" "$FINAL_TLS" "$TRY"
-    else
-			# Ошибка: последняя непустая строка из последнего FULL_OUT
-			LAST_ERR=$(echo "$FULL_OUT" | grep -v '^[[:space:]]*$' | tail -n 1)
-			printf "  %-14s ${RED_BRIGHT}ОФЛАЙН${CLR_OFF}\n" "$IFACE (IPv4) :"
-			echo "------------------------------------------------------"
-			echo "$LAST_ERR" | sed 's/^/  / '
-			echo "------------------------------------------------------"
-			NEED_RESOLVE_TEST=1
+	else
+		# Ошибка: последняя непустая строка из последнего FULL_OUT
+		LAST_ERR=$(echo "$FULL_OUT" | grep -v '^[[:space:]]*$' | tail -n 1)
+		printf "  %-14s ${RED_BRIGHT}ОФЛАЙН${CLR_OFF}" "$IFACE (IPv4) :"
+		if [ "${RKN_WARP_BLOCK}" = "1" ]; then
+			printf "%b" "${YELLOW} Доступ к ya.ru через WARP есть. ${RED_BRIGHT}РКН-БЛОК!${CLR_OFF}\n"
+		fi		
+		echo "------------------------------------------------------"
+		echo "$LAST_ERR" | sed 's/^/  / '
+		echo "------------------------------------------------------"
+		NEED_RESOLVE_TEST=1
+
 	fi
 fi
 
