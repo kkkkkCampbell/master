@@ -1359,9 +1359,9 @@ echo "= СИСТЕМНЫЕ РЕСУРСЫ:"
 printf "  LAN IP: %s\n" "${LAN_IP} | uptime: $(uptime | sed -E 's/^.*up ([^,]+),.*$/\1/') | (Прошивка: ${VERSION})"
 printf "  CPU: %s | RAM: %s%% | NAND: %s занято / %s доступно\n" "$LOAD" "$MEM_P" "$NAND_PCT" "$NAND_FREE"
 crontab -l | sed -e '/^[[:space:]]*#/d' -e 's/^/  /'
-if opkg list-installed | grep -q "wdoc"; then
-    printf "  ${RED_BRIGHT}!!!_WatchDoc установлен${CLR_OFF}\n"
-fi
+# if opkg list-installed | grep -q "wdoc"; then
+#    printf "  ${RED_BRIGHT}!!!_WatchDoc установлен${CLR_OFF}\n"
+# fi
 
 # Блок 8: Очистка лога
 if [ -f "$LOG_FILE" ]; then sed -i 's/\x1b\[[0-9;?]*[a-zA-Z]//g' "$LOG_FILE"; fi
