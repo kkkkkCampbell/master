@@ -5,7 +5,7 @@ export TERM=xterm-256color
 . /etc/os-release
 IFACE="awg10"
 FIRST_IN="0"
-VER="0.0.71"
+VER="0.0.75"
 
 ifdown "$IFACE"
 # /etc/init.d/opera-proxy restart >/dev/null 2>&1
@@ -417,6 +417,8 @@ done
 
 
 # --- БЛОК 2: ИНТЕРФЕЙС awg10 (ДЕТАЛИ) ---
+
+checkIFACE_DIAG "${IFACE}"
 NEED_RESOLVE_TEST=0
 if [ -d "/sys/class/net/$IFACE" ]; then
     echo ""
@@ -425,11 +427,10 @@ if [ -d "/sys/class/net/$IFACE" ]; then
     RX=$(ifconfig "$IFACE" | grep "RX bytes" | awk '{print $2}' | cut -d: -f2 | awk '{printf "%.2f MB", $1/1048576}')
     TX=$(ifconfig "$IFACE" | grep "TX bytes" | awk '{print $6}' | cut -d: -f2 | awk '{printf "%.2f MB", $1/1048576}')
 
-	checkIFACE_DIAG "${IFACE}"
-#	printf " ${S_CLR}${SYS_RUN} ${C_CLR}${CONF_STAT} ${A_CLR}${AUTO_STAT}${CLR_OFF}" 
-
+	#	printf " ${S_CLR}${SYS_RUN} ${C_CLR}${CONF_STAT} ${A_CLR}${AUTO_STAT}${CLR_OFF}" 
 	printf "  Статус                : ${S_CLR}${SYS_RUN} ${C_CLR}${CONF_STAT} ${A_CLR}${AUTO_STAT}${CLR_OFF}${CLR_OFF} | ↓${RX} / ↑${TX}\n"
     printf "  Пинг (ya.ru via %s): Ожидайте, идет замер (%d пакетов)..." "$IFACE" "$PING_COUNT"
+
 	
     # Захватываем stderr для анализа причин падения
     PING_RAW=$(ping -I "$IFACE" -c $PING_COUNT ya.ru 2>&1)
@@ -454,6 +455,10 @@ if [ -d "/sys/class/net/$IFACE" ]; then
         _P_ERR=$(echo "$PING_RAW" | head -n 1 | sed "s/ping: //")
         printf "  ! Ошибка: ${YELLOW}%s${CLR_OFF}\n" "$_P_ERR"
     fi
+	
+else
+	#	printf " ${S_CLR}${SYS_RUN} ${C_CLR}${CONF_STAT} ${A_CLR}${AUTO_STAT}${CLR_OFF}" 
+	echo -e "  ${RED_BRIGHT}Интерфейс ${IFACE} не существует, или отключен.${CLR_OFF}"
 fi
 
 
