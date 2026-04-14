@@ -5,7 +5,7 @@ export TERM=xterm-256color
 . /etc/os-release
 IFACE="awg10"
 FIRST_IN="0"
-VER="0.0.75"
+VER="0.0.76"
 
 ifdown "$IFACE"
 # /etc/init.d/opera-proxy restart >/dev/null 2>&1
@@ -301,23 +301,50 @@ checkIFACE_DIAG() {
 
     local state_key="${d_val}:${a_val}:${if_up}"
 
-    case "$state_key" in
-        *)
-            # ЛЮБОЙ КОСЯК: флаг в единицу и полный расклад
-            IF_ERROR=1
-            
-            # Назначаем статусы
-            [ "$d_val" = "1" ] && CONF_STAT="DISABLED" || CONF_STAT="ENABLED"
-            [ "$a_val" = "0" ] && AUTO_STAT="AutoStart: OFF" || AUTO_STAT="AutoStart: ON"
-            [ "$if_up" = "up" ] && SYS_RUN="UP" || SYS_RUN="DOWN"
-            
-            # Красим только проблемные места (пример для Auto: OFF)
-            [ "$a_val" = "0" ] && A_CLR="${RED_BRIGHT}" || A_CLR="${GREEN}"
-            [ "$d_val" = "1" ] && C_CLR="${RED_BRIGHT}" || C_CLR="${GREEN}"
-            [ "$if_up" = "up" ] && S_CLR="${GREEN}"     || S_CLR="${RED_BRIGHT}"
-            ;;
-    esac
+	# Назначаем статусы
+	[ "$d_val" = "1" ] && CONF_STAT="DISABLED" || CONF_STAT="ENABLED"
+	[ "$a_val" = "0" ] && AUTO_STAT="AutoStart: OFF" || AUTO_STAT="AutoStart: ON"
+	[ "$if_up" = "up" ] && SYS_RUN="UP" || SYS_RUN="DOWN"
+	
+	# Красим только проблемные места (пример для Auto: OFF)
+	[ "$a_val" = "0" ] && A_CLR="${RED_BRIGHT}" || A_CLR="${GREEN}"
+	[ "$d_val" = "1" ] && C_CLR="${RED_BRIGHT}" || C_CLR="${GREEN}"
+	[ "$if_up" = "up" ] && S_CLR="${GREEN}"     || S_CLR="${RED_BRIGHT}"
+
 }
+
+# Проверяем доступ к URL по каналу WARP через $IFACE
+# $1 - TEST_URL
+# $2 - что проверяем:
+#	$2 = "" открытый ресурс
+#	$2 != "" закрытый ресурс
+
+check_WARP() {
+	# Сначала пробуем TLSv1.3
+	for tls_ver in tlsv1.3 tlsv1.2; do
+		for attempt in $(seq 1 $MAX_RETRIES); do
+			TRY=$((TRY + 1))
+			FULL_OUT=$(curl -4 -I -A -s --no-progress-meter --user-agent 'Mozilla/5.0' \
+				--interface "$IFACE" --max-time 20 --connect-timeout 5 \
+				--insecure --$tls_ver "$1" 2>&1)
+			W_CODE=$(echo "$FULL_OUT" | awk '/HTTP\// {print; exit}')
+			if [ -n "$W_CODE" ]; then
+				if [ -z "$2" ]; then
+					RKN_WARP_BLOCK=1
+					break 2   # выходим из двух циклов
+				else
+					SUCCESS=1
+					FINAL_W_CODE="$W_CODE"
+					FINAL_TLS="$tls_ver"
+					FINAL_FULL_OUT="$FULL_OUT"
+					break 2   # выходим из двух циклов
+				fi
+			fi
+			# если не успех, продолжаем
+		done
+	done
+}
+
 
 
 # endregion FUNCTIONS
@@ -535,46 +562,11 @@ if [ -d "/sys/class/net/$IFACE" ]; then
     FINAL_TLS=""
     FINAL_FULL_OUT=""
 	
-	# Проверяем доступ через варп к незаблокированному сервису
-	RKN_WARP_BLOCK=0
-	# Сначала пробуем TLSv1.3
-	for tls_ver in tlsv1.3 tlsv1.2; do
-		for attempt in $(seq 1 $MAX_RETRIES); do
-			TRY=$((TRY + 1))
-			FULL_OUT=$(curl -4 -I -A -s --no-progress-meter --user-agent 'Mozilla/5.0' \
-				--interface "$IFACE" --max-time 20 --connect-timeout 5 \
-				--insecure --$tls_ver "https://ya.ru" 2>&1)
-			W_CODE=$(echo "$FULL_OUT" | awk '/HTTP\// {print; exit}')
-			if [ -n "$W_CODE" ]; then
-				RKN_WARP_BLOCK=1
-				break 2   # выходим из двух циклов
-			fi
-			# если не успех, продолжаем
-		done
-	done
-
-
-
-	# Сначала пробуем TLSv1.3
-    for tls_ver in tlsv1.3 tlsv1.2; do
-        for attempt in $(seq 1 $MAX_RETRIES); do
-            TRY=$((TRY + 1))
-            FULL_OUT=$(curl -4 -I -A -s --no-progress-meter --user-agent 'Mozilla/5.0' \
-                --interface "$IFACE" --max-time 20 --connect-timeout 9 \
-                --insecure --$tls_ver "$TEST_URL" 2>&1)
-            W_CODE=$(echo "$FULL_OUT" | awk '/HTTP\// {print; exit}')
-            if [ -n "$W_CODE" ]; then
-                SUCCESS=1
-                FINAL_W_CODE="$W_CODE"
-                FINAL_TLS="$tls_ver"
-                FINAL_FULL_OUT="$FULL_OUT"
-                break 2   # выходим из двух циклов
-            fi
-            # если не успех, продолжаем
-        done
-    done
-
-
+	# Проверяем открытый ресурс
+	check_WARP "https://ya.ru" ""
+	
+	# Проверяем закрытый ресурс
+	check_WARP "${TEST_URL}" "BLOCKED"
 		
     if [ $SUCCESS -eq 1 ]; then
         # Убираем лишние пробелы и перевод строк
@@ -591,9 +583,9 @@ if [ -d "/sys/class/net/$IFACE" ]; then
 		else
 			echo ""
 		fi
-		echo "------------------------------------------------------"
+		echo "--------------------------------------------------------------"
 		echo "$LAST_ERR" | sed 's/^/  / '
-		echo "------------------------------------------------------"
+		# echo "------------------------------------------------------"
 		NEED_RESOLVE_TEST=1
 
 	fi
@@ -619,27 +611,9 @@ fi
 	# fi
 fi
 
-# --- ЗАПУСКАЕМ РАНЕЕ ОСТАНОВЛЕННЫЕ СЕРВИСЫ
-
-printf "  ${YELLOW}Запускаем остановленные службы, ожидайте...${CLR_OFF}\n"
-#for pkg in $autostarted; do
-for pkg in $active; do
-	[ "${pkg}" == "sing-box" ] && continue
-	[ "${pkg}" == "opera-proxy" ] && continue
-	[ "${pkg}" == "zeroblock" ] && continue
-	/etc/init.d/${pkg} start 1>/dev/null 2>&1
-done
-
-for i in $(seq 1 10); do
-    if /etc/init.d/sing-box status 2>/dev/null | grep -q "running"; then
-        break
-    fi
-    sleep 1
-done
 
 
-
-[ $NEED_RESOLVE_TEST -eq 1 ] && sleep 3
+# [ $NEED_RESOLVE_TEST -eq 1 ] && sleep 3
 
 
 
@@ -663,6 +637,26 @@ fi
 
 
 
+# --- ЗАПУСКАЕМ РАНЕЕ ОСТАНОВЛЕННЫЕ СЕРВИСЫ
+
+printf "  ${YELLOW}Запускаем остановленные службы, ожидайте...${CLR_OFF}"
+
+#for pkg in $autostarted; do
+for pkg in $active; do
+	[ "${pkg}" == "sing-box" ] && continue
+	[ "${pkg}" == "opera-proxy" ] && continue
+	[ "${pkg}" == "zeroblock" ] && continue
+	/etc/init.d/${pkg} start 1>/dev/null 2>&1
+done
+
+for i in $(seq 1 10); do
+    if /etc/init.d/sing-box status 2>/dev/null | grep -q "running"; then
+        break
+    fi
+    sleep 1
+done
+printf "\r\033[K"
+[ $NEED_RESOLVE_TEST -eq 1 ] && printf "\033[1A\033[K"
 
 # --- БЛОК 4: СТАТУС СЛУЖБ ---
 echo ""
