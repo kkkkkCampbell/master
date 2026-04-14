@@ -579,7 +579,7 @@ if [ -d "/sys/class/net/$IFACE" ]; then
 		LAST_ERR=$(echo "$FULL_OUT" | grep -v '^[[:space:]]*$' | tail -n 1)
 		printf "  %-14s ${RED_BRIGHT}ОФЛАЙН${CLR_OFF}" "$IFACE (IPv4) :"
 		if [ "${RKN_WARP_BLOCK}" = "1" ]; then
-			printf "%b" "${YELLOW} Доступ к ya.ru через WARP есть. ${RED_BRIGHT}РКН-БЛОК!${CLR_OFF}\n"
+			printf "%b" "${YELLOW} Доступ к ya.ru через WARP есть. ${RED_BRIGHT}РКН-БЛОК ЮТУБА!${CLR_OFF}\n"
 		else
 			echo ""
 		fi
