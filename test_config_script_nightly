@@ -1563,6 +1563,12 @@ else
 	#fi
 fi
 
+if [ "${ACTIVE_API}" = "zb" ]; then
+	if [ "1" = $(uci get zeroblock.auto_config.enable_monitoring)  ]; then
+		echo -e "${YELLOW}  !_Автозагрузка секций включена${CLR_OFF}"
+	fi
+fi
+
 
 
 # --- БЛОК 7: СИСТЕМНЫЕ РЕСУРСЫ ---
