@@ -296,8 +296,8 @@ while true; do
 	# Проверка, что ввод - число
     if ! echo "$choice" | grep -q '^[0-9]\+$'; then
         echo "Ошибка: Введите число!"
-        echo "Нажмите Enter для продолжения..."
-        read dummy
+        sleep 3
+		# read dummy
         continue
     fi
 
