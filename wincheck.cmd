@@ -28,8 +28,9 @@ ping ya.ru -n 10 | findstr /r /c:"\[" /c:"=" /c:"%%" | findstr /v /i "TTL"
 
 echo.
 
-echo ========== ПАРАМЕТРЫ СИСТЕМНОГО ПРОКСИ ==========
 chcp 1251 > nul
+echo ========== ПАРАМЕТРЫ СИСТЕМНОГО ПРОКСИ ==========
+
 echo.
 
 set "PROXY_ACTIVE="
