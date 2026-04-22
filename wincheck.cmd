@@ -22,62 +22,63 @@ echo --- PING ---
 chcp 866 > nul
 setlocal enabledelayedexpansion
 
-:: РСЃРїРѕР»СЊР·СѓРµРј [ ] РєР°Рє СЏРєРѕСЂСЊ РґР»СЏ РїРµСЂРІРѕР№ СЃС‚СЂРѕРєРё Рё = РґР»СЏ СЃС‚Р°С‚РёСЃС‚РёРєРё
-:: РСЃРєР»СЋС‡Р°РµРј TTL, С‡С‚РѕР±С‹ СѓР±СЂР°С‚СЊ СЃС‚СЂРѕРєРё РѕС‚РІРµС‚РѕРІ
+:: Используем [ ] как якорь для первой строки и = для статистики
+:: Исключаем TTL, чтобы убрать строки ответов
 ping ya.ru -n 10 | findstr /r /c:"\[" /c:"=" /c:"%%" | findstr /v /i "TTL"
 
 echo.
 
 chcp 866 > nul
 chcp 1251 > nul
-echo ========== РџРђР РђРњР•РўР Р« РЎРРЎРўР•РњРќРћР“Рћ РџР РћРљРЎР ==========
+:: chcp 65001
+echo ========== ПАРАМЕТРЫ СИСТЕМНОГО ПРОКСИ ==========
 
 echo.
 
 set "PROXY_ACTIVE="
 
-:: 1. РџСЂРѕРІРµСЂСЏРµРј РїРѕР»СЊР·РѕРІР°С‚РµР»СЊСЃРєРёР№ РїСЂРѕРєСЃРё (Internet Settings)
+:: 1. Проверяем пользовательский прокси (Internet Settings)
 reg query "HKCU\Software\Microsoft\Windows\CurrentVersion\Internet Settings" /v ProxyEnable 2>nul | find "0x1" >nul
 if not errorlevel 1 (
     set "PROXY_ACTIVE=1"
-    echo "[Р’РєР»СЋС‡РµРЅ РїРѕР»СЊР·РѕРІР°С‚РµР»СЊСЃРєРёР№ РїСЂРѕРєСЃРё]"
-    for /f "tokens=2,*" %%a in ('reg query "HKCU\Software\Microsoft\Windows\CurrentVersion\Internet Settings" /v ProxyServer 2^>nul') do echo   РЎРµСЂРІРµСЂ: %%b
-    for /f "tokens=2,*" %%a in ('reg query "HKCU\Software\Microsoft\Windows\CurrentVersion\Internet Settings" /v ProxyOverride 2^>nul') do echo   РСЃРєР»СЋС‡РµРЅРёСЏ: %%b
+    echo "[Включен пользовательский прокси]"
+    for /f "tokens=2,*" %%a in ('reg query "HKCU\Software\Microsoft\Windows\CurrentVersion\Internet Settings" /v ProxyServer 2^>nul') do echo   Сервер: %%b
+    for /f "tokens=2,*" %%a in ('reg query "HKCU\Software\Microsoft\Windows\CurrentVersion\Internet Settings" /v ProxyOverride 2^>nul') do echo   Исключения: %%b
     echo.
 )
 
-:: 2. РџСЂРѕРІРµСЂСЏРµРј Р°РІС‚РѕРѕР±РЅР°СЂСѓР¶РµРЅРёРµ (WPAD)
+:: 2. Проверяем автообнаружение (WPAD)
 reg query "HKCU\Software\Microsoft\Windows\CurrentVersion\Internet Settings" /v AutoDetect 2>nul | find "0x1" >nul
 if not errorlevel 1 (
     set "PROXY_ACTIVE=1"
-    echo "[Р’РєР»СЋС‡РµРЅРѕ Р°РІС‚РѕРјР°С‚РёС‡РµСЃРєРѕРµ РѕР±РЅР°СЂСѓР¶РµРЅРёРµ РїСЂРѕРєСЃРё (WPAD)]"
+    echo "[Включено автоматическое обнаружение прокси (WPAD)]"
     echo.
 )
 
-:: 3. РџСЂРѕРІРµСЂСЏРµРј URL PAC-С„Р°Р№Р»Р°
+:: 3. Проверяем URL PAC-файла
 for /f "tokens=2,*" %%a in ('reg query "HKCU\Software\Microsoft\Windows\CurrentVersion\Internet Settings" /v AutoConfigURL 2^>nul') do (
     set "PROXY_ACTIVE=1"
-    echo [РСЃРїРѕР»СЊР·СѓРµС‚СЃСЏ PAC-СЃРєСЂРёРїС‚]
+    echo [Используется PAC-скрипт]
     echo   "URL: %%b"
     echo.
 )
 
-:: 4. WinHTTP РїСЂРѕРєСЃРё (РёСЃРїСЂР°РІР»РµРЅРѕ)
-netsh winhttp show proxy | find "РїСЂСЏРјРѕР№ РґРѕСЃС‚СѓРї" >nul
+:: 4. WinHTTP прокси (исправлено)
+netsh winhttp show proxy | find "прямой доступ" >nul
 if errorlevel 1 (
     set "PROXY_ACTIVE=1"
-    echo "[РќР°СЃС‚СЂРѕРµРЅ WinHTTP РїСЂРѕРєСЃРё]"
-    for /f "tokens=*" %%a in ('netsh winhttp show proxy ^| findstr /v /c:"РїСЂСЏРјРѕР№ РґРѕСЃС‚СѓРї" ^| findstr /v "^$"') do echo "  %%a"
+    echo "[Настроен WinHTTP прокси]"
+    for /f "tokens=*" %%a in ('netsh winhttp show proxy ^| findstr /v /c:"прямой доступ" ^| findstr /v "^$"') do echo "  %%a"
     echo.
 )
 
 
-:: 5. Р•СЃР»Рё РЅРёС‡РµРіРѕ РЅРµ Р°РєС‚РёРІРЅРѕ
+:: 5. Если ничего не активно
 if not defined PROXY_ACTIVE (
-    echo "РђРєС‚РёРІРЅС‹С… РїСЂРѕРєСЃРё РЅРµС‚."
+    echo "Активных прокси нет."
     echo.
 )
 
-echo ========== РљРћРќР•Р¦ ==========
+echo ========== КОНЕЦ ==========
 
 pause
