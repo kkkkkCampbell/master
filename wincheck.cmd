@@ -12,7 +12,7 @@ set NS_HOST=facebook.com
 set PING_HOST=ya.ru
 set PING_COUNT=10
 REM =========================
-chcp 866 > nul
+
 REM ----- PART 1: Network config + nslookup (with empty line after DNSServer) -----
 ( powershell -Command "Get-NetIPConfiguration | Where-Object {$_.NetAdapter.Status -eq 'Up'}; nslookup %NS_HOST% 2>&1" | findstr /v "^$" ) | powershell -Command "$input | ForEach-Object { $_; if ($_ -match 'DNSServer') { '' } }"
 
