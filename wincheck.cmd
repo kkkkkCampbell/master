@@ -28,8 +28,8 @@ ping ya.ru -n 10 | findstr /r /c:"\[" /c:"=" /c:"%%" | findstr /v /i "TTL"
 
 echo.
 
-:: chcp 866 > nul
-:: chcp 1251 > nul
+chcp 866 > nul
+chcp 1251 > nul
 echo ========== ПАРАМЕТРЫ СИСТЕМНОГО ПРОКСИ ==========
 
 echo.
