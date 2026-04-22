@@ -1,7 +1,7 @@
 @echo off
 setlocal
 
-:: chcp 1251 > nul
+chcp 1251 > nul
 cls
 echo.
 echo --- COLLECTING DATA ---
