@@ -1,5 +1,5 @@
 #!/bin/sh
-#amnezia_mtu_autoconfig
+#settings_autofix
 
 echo "=== ТЕСТ MTU И АВТОНАСТРОЙКА ДЛЯ AmneziaWG ==="
 
