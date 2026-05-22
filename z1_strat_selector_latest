@@ -1,11 +1,11 @@
 #!/bin/sh
-#z1_strat_selector_latest
+#z1_strat_selector
 
 clear
-echo "ver 0.0.7"
+echo "ver 0.0.5"
 sleep 3
 
-# dd count=1 bs=1024 2>/dev/null
+dd count=1 bs=1024 2>/dev/null
 
 # Сброс цвета
 NC='\033[0m'
@@ -35,9 +35,7 @@ CONFIG_FILE="/opt/strategy_selector/strategy"
 mkdir -p "/opt/strategy_selector/"
 
 # Скачиваем стратегии, если их нет
-echo "Обновляем стратегии"
-[ ! -f "$CONFIG_FILE" ] || [ ! -s "$CONFIG_FILE" ] \
- && wget -qO "$CONFIG_FILE" https://raw.githubusercontent.com/kkkkCampbell/master/refs/heads/z1_strat_selector/strategy
+[ ! -f "$CONFIG_FILE" ] && wget -qO "$CONFIG_FILE" https://raw.githubusercontent.com/kkkkCampbell/master/refs/heads/z1_strat_selector/strategy
 
 
 #--- СКАЧИВАЕМ И УСТАНАВЛИВАЕМ ЗАПРЕТ ОТ РЕМИТТОР
@@ -216,10 +214,7 @@ fi
 SECTION_COUNT=$(count_sections)
 if [ $SECTION_COUNT -eq 0 ]; then
     echo "Ошибка: В файле $CONFIG_FILE нет секций!" >&2
-	echo "Обновляем стратегии"
-	rm -f "$CONFIG_FILE"
-	[ ! -f "$CONFIG_FILE" ] && wget -qO "$CONFIG_FILE" https://raw.githubusercontent.com/kkkkCampbell/master/refs/heads/z1_strat_selector/strategy
-	SECTION_COUNT=$(count_sections)
+    exit 1
 fi
 
 # Сохраняем секции в массив (для ASH используем временный файл)
@@ -260,7 +255,7 @@ while true; do
 	if [ "$choice" = "777" ]; then
 		zapret_installer
 		echo ""; echo "Нажмите Enter для продолжения..."
-		read dummy
+		read dummy 
 		continue
 	fi
 	
@@ -295,9 +290,10 @@ while true; do
     
 	# Проверка, что ввод - число
     if ! echo "$choice" | grep -q '^[0-9]\+$'; then
-        echo "Ошибка: Введите число!"
-        sleep 3
+        # echo "Ошибка: Введите число!"
+        # sleep 1
 		# read dummy
+a=a
         continue
     fi
 
